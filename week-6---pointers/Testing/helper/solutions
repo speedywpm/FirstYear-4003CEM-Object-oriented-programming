@@ -1,0 +1,111 @@
+#!/usr/bin/env python3
+
+import os
+import re
+import sys
+import getopt
+import pyminizip
+
+solutionFile = re.compile( r"solution_(.*(\.(py|h|cpp|txt)))")
+
+ifBlock = re.compile( r"^\s*//\s*IF (SOLUTION|TASK)" )
+elseBlock = re.compile( r"^\s*//\s*ELSE (SOLUTION|TASK)" )
+endBlock = re.compile( r"^\s*//\s*END (SOLUTION|TASK)" )
+
+solve = False # flag for whether should use solution in task file
+verbose = False
+
+shortopts = "sv"
+longopts = ["solve", "verbose"]
+try:
+    opts, args = getopt.getopt(sys.argv[1:], shortopts, longopts)
+except getopt.GetoptError as e:
+    print(e)
+    sys.exit(1)
+    
+# process flags
+for o, a in opts:
+    if o in ("-s", "--solve"):
+        solve = True
+    if o in ("-v", "--verbose"):
+        verbose = True
+
+files = args
+if files == []: files = os.listdir('Solutions')
+
+passwordFilename = os.path.join( "Solutions", "password" )
+secureFilename = os.path.join( "Solutions", "solutions.zip" )
+
+# add files to solutions.zip
+solutionFiles = []
+
+for filename in files:
+    match = solutionFile.match(filename) 
+    if not match: continue
+
+    if verbose: print( "Process {}".format(filename) )
+
+    sourceFilename = os.path.join( "Solutions", filename )
+    taskFilename = match.group(1)
+    solutionFilename = os.path.join( "Solutions", taskFilename )
+        
+    print( filename, taskFilename, solutionFilename )
+
+    # read solution file
+    lines = []
+    state = "BOTH"
+    with open( sourceFilename, "r" ) as sFile:
+        for line in sFile:
+            ifMatch = ifBlock.search( line )
+            elseMatch = elseBlock.search( line )
+            endMatch = endBlock.search( line )
+
+            if ifMatch:
+                state = ifMatch.group(1)
+            elif elseMatch:
+                state = elseMatch.group(1)
+            elif endMatch:
+                state = "BOTH"
+
+            if verbose: print( "{:8}: {}".format(state,line), end="" )
+
+            if ifMatch or elseMatch or endMatch:
+                lines.append( (None,line) )
+            else:
+                lines.append( (state,line) )
+        print()
+
+    if taskFilename.startswith( "test_" ):
+        taskFilename = os.path.join( "Testing", taskFilename )
+
+    # identify which files need to get regenerated
+    fileAge, taskAge, solutionAge = \
+        ( os.path.getmtime(i) for i in (sourceFilename, taskFilename, solutionFilename) )
+
+    if True or taskAge < fileAge:
+        states = ("BOTH","SOLUTION") if solve else ("BOTH","TASK")
+        with open( taskFilename, "w" ) as file:
+            for state, line in lines:
+                if state in states:
+                    file.write( line )
+    elif verbose:
+        print( "Age skip" )
+
+    if True or solutionAge < fileAge:
+        states = ("BOTH","SOLUTION")
+        with open( solutionFilename, "w" ) as file:
+            for state, line in lines:
+                if state in states:
+                    file.write(line)
+
+    solutionFiles.append(solutionFilename)
+
+if os.path.isfile( passwordFilename ):
+    print( "Passworded" )
+    password = open( passwordFilename, "r" ).readline().strip("\r\n")
+    print(">",password,"<")
+    if solutionFiles != []:
+        pyminizip.compress_multiple( solutionFiles, [], secureFilename, password, 1 )
+
+
+    

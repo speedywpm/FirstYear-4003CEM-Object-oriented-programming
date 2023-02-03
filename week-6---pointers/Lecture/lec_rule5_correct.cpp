@@ -1,0 +1,76 @@
+#include <iostream>
+using namespace std;
+
+class Thingy
+{
+private:
+	double* pointer;
+
+public:
+	/** constructor **/
+	Thingy( double value )
+	{
+		pointer = new double;
+		*pointer = value;
+	}
+
+	/** copy constructor, rule of 3 - 1/3 **/
+	Thingy( const Thingy& other )
+	{
+		pointer = new double;
+		*pointer = *(other.pointer);
+	}
+
+	/** copy assignment, rule of 3 - 2/3 **/
+	Thingy& operator=( const Thingy& other )
+	{
+		*pointer = *(other.pointer);
+	}
+
+	/** destructor, rule of 3 - 3/3 **/
+	~Thingy()
+	{
+		if( pointer != nullptr )
+			delete pointer;
+	}
+
+	/** move constructor, rule of 5 - 4/5 **/
+	Thingy( Thingy&& other )
+	{
+		pointer = other.pointer;
+		other.pointer = nullptr;
+	}
+
+	/** move assignment, rule of 5 - 5/5 **/
+	Thingy& operator=( Thingy&& other )
+	{
+		swap( pointer, other.pointer );
+	};
+
+	friend size_t get_memory_address( const Thingy& thing );
+};
+
+size_t get_memory_address( const Thingy& thing ) { return (size_t)thing.pointer; }
+
+int main()
+{
+	Thingy thingA( 123.456 );   // calls the constructor
+	Thingy thingB = thingA;     // calls the copy constructor
+	Thingy thingC( 456.789 );   
+	thingC = thingB;            // calls copy assignment
+
+	cout << "If the addresses aren't all unique we have a problem" << endl;
+	cout << "thingA: " << get_memory_address( thingA ) << endl;
+	cout << "thingB: " << get_memory_address( thingB ) << endl;
+	cout << "thingC: " << get_memory_address( thingC ) << endl << endl;
+
+	Thingy thingD( std::move(thingA) ); // calls the move constructor
+	thingC = std::move( thingB );       // calls the move assignment
+
+	cout << "thingA: " << get_memory_address( thingA ) << endl;
+	cout << "thingB: " << get_memory_address( thingB ) << endl;
+	cout << "thingC: " << get_memory_address( thingC ) << endl;
+	cout << "thingD: " << get_memory_address( thingD ) << endl;
+
+	return 0;
+}

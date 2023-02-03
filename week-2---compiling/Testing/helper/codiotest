@@ -1,0 +1,204 @@
+#!/usr/bin/env python3
+import subprocess
+import getopt
+from lxml import etree
+import sys, os, re
+
+def process_xml( xml ):
+	allowTags = ("Section","TestCase")
+
+	root = etree.fromstring( xml ) 
+
+	# pull out the info tags that apply to each expression
+	infoData = {}
+	infoTemp = []
+	for element in root.iter("Expression", "Info", "Failure"):
+		if element.tag == "Info":
+			infoTemp.append( element.text.strip() )
+		elif element.tag in ("Expression","Failure"):
+			infoData[element] = infoTemp
+			infoTemp = []
+	del infoTemp
+
+	errors = 0
+	results = []
+	# handle expression tags
+	for expression in root.findall(".//Expression[@success='false']"):
+		results.append({"explanation":[]})
+		errors += 1
+
+		# print out section and info data
+		for section in ( i for i in expression.iterancestors() if i.tag in allowTags ):
+			results[-1]["explanation"].append( section.get("name") )
+
+		# find applicable info blocks
+		results[-1]["info"] = infoData[expression]
+
+		# print out the data from the actual error
+		results[-1]["testing"] = expression.find("Original").text.strip()
+		results[-1]["values"] = expression.find("Expanded").text.strip()
+
+	# handle failure tags
+	for failure in root.findall(".//Failure"):
+		results.append({"explanation":[]})
+		errors += 1
+
+		# print out section and info data
+		for section in ( i for i in failure.iterancestors() if i.tag in allowTags ):
+			results[-1]["explanation"].append( section.get("name") )
+
+		# find applicable info blocks
+		results[-1]["info"] = infoData[failure]	
+		results[-1]["fail"] = failure.text.strip()
+
+	tests = len(list(root.findall(".//Expression")))
+
+	return errors, tests, results
+
+def config_cmake():	
+	cmd = ("cmake", ".", "-DCMAKE_BUILD_TYPE=Debug")
+	shell = subprocess.Popen( cmd, stderr=subprocess.STDOUT, stdout=subprocess.PIPE )
+
+	return shell.wait() == 0, shell.stdout.read().decode()
+
+def compile_cmake( testName ):
+	cmd = ("cmake", "--build", ".", "--target", testName)
+	shell = subprocess.Popen( cmd, stderr=subprocess.STDOUT, stdout=subprocess.PIPE )
+
+	return shell.wait() == 0, shell.stdout.read().decode()
+
+def run_test( testRunner ):
+	cmd = ( testRunner,"--reporter","xml","--success" )
+	shell = subprocess.Popen( cmd, stderr=subprocess.STDOUT, stdout=subprocess.PIPE )
+
+	shell.wait()
+	return False, shell.stdout.read()
+	
+def run_test_leaks( testRunner ):
+	cmd = ("valgrind","--leak-check=full",
+					"--log-file=/dev/null",
+					"--error-exitcode=255",testRunner,
+					"--reporter", "xml", "--success")
+	shell = subprocess.Popen( cmd, stderr=subprocess.STDOUT, stdout=subprocess.PIPE )
+
+	return shell.wait() == 255, shell.stdout.read()
+	
+def display_test_results( results, printErrors ):
+	WIDTH = 40
+	
+	if len(results) == 0: return
+	if printErrors == 0: return
+
+	if printErrors == None: printErrors = len(results) 
+
+	print("="*WIDTH)
+
+	for result in results[:printErrors]:
+		if len(result["explanation"]) > 0:
+			for line in reversed(result["explanation"]):
+				print(line)
+			print("-"*WIDTH)
+
+		if result["info"] != []:
+			print( "Info   : {}".format(result["info"][0]) )
+			for info in result["info"][1:]:
+				print( "         {}".format(info) )
+		
+		if "testing" in result: print( "Testing: {}".format(result["testing"]) )
+		if "values" in result: print( "Failed : {}".format(result["values"]) )
+		if "fail" in result: print( "Failed : {}".format(result["fail"]) )
+		print("="*WIDTH)
+
+SUBDIRREG = re.compile( r'subdirs\(\s*\"{0,}([a-zA-Z_\-\s0-9\.\\\/]*[a-zA-Z_\-0-9\.\\\/])\"{0,1}\s*\)' )
+TESTRUNNERREG = re.compile( r'add_test\(\s*([a-zA-Z_\-0-9\.\\]{1,})\s*"{0,1}([^"]*)"{0,1}\s*\)' )
+def get_test_runners( filename="CTestTestfile.cmake", path="." ):
+	runners = {}
+
+	with open( os.path.join(path,filename), "r" ) as f:
+		for line in f:
+			subdir = SUBDIRREG.search(line)
+			if subdir: 
+				subRunners = get_test_runners( path=os.path.join(path,subdir.group(1) ) )
+				runners.update(subRunners)
+				continue
+
+			testRunner = TESTRUNNERREG.search(line)
+			if testRunner:
+				runners[testRunner.group(1)] = testRunner.group(2)
+
+	return runners
+
+def main( test, leakCheck=True, numTests=None, printErrors=None ):
+	# run cmake configure
+	success, output = config_cmake()
+	if not success: 
+		print( output )
+		return 1
+
+	# run cmake compile
+	success, output = compile_cmake( test )
+	if not success: 
+		print( "Compilation failed" )
+		print()
+		print( output )
+		return 2
+
+	# get test runners
+	runners = get_test_runners()
+	if test not in runners: 
+		print( "Could not find test runner" )
+		return 6
+	
+	# execute test runner
+	test_func = run_test_leaks if leakCheck else run_test
+	leaks, xml = test_func( runners[test] )
+
+	testErrors, testsRun, testResults = process_xml( xml )
+	
+	exitCode = 0
+	if numTests != None and testsRun < numTests:
+		print( "Expecting {} test/s but only found {}".format(numTests,testsRun) )
+		exitCode = 5
+
+	if printErrors not in (None,0) and testErrors > printErrors:
+		print( "Displaying {} out of {} error/s".format(printErrors,testErrors) )
+	else:
+		print( "Found {} error/s".format(testErrors) )
+
+	if testErrors != 0: exitCode = 3
+
+	if leaks:
+		print( "Memory leak/s detected" )
+		exitCode = 4
+
+	display_test_results( testResults, printErrors )
+
+	return exitCode
+
+if __name__ == "__main__":
+	options, args = getopt.getopt( sys.argv[1:], 'hmt:d:', ["help","memoryoff", "tests=","display="] )
+
+	usage = """codiotest TESTNAME
+Performs the actions needed to compile and run the named testrunner
+
+    -m -memoryoff    Disable the memory leak check
+	-t --tests       NUM Add an additional check that the test 
+	                     runner must have at least NUM tests"""
+
+	memoryCheck = True
+	tests = None
+	displayErrors = 2
+
+	for opt, arg in options:
+		if opt in ('-h', '--help'):
+			print(usage)
+			sys.exit(1)
+		elif opt in ('-m', '--memoryoff'):
+			memoryCheck = False
+		elif opt in ('-t', '--tests'):
+			tests = int(arg)
+		elif opt in ('-d', '--display'):
+			displayErrors = int(arg)
+			if displayErrors < 0: displayErrors = None
+
+	sys.exit( main( args[0], leakCheck=memoryCheck, numTests=tests, printErrors=displayErrors ) )

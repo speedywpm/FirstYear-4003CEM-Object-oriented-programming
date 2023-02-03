@@ -1,0 +1,89 @@
+#!/bin/bash
+
+#rm runner 2>/dev/null
+
+#echo "Running $1"
+
+#echo $'#include "leaker.h"\n' "`cat $1`" | g++ --std=c++11 -I/home/codio/workspace -x c++ - leaker.c -o runner
+#compile=$?
+
+#if [[ $compile -eq 0 ]]
+#then
+#  ./runner 2>&1 | ack-grep --passthru "LEAKER: errors found!"
+#  exit $((1-$?))
+#fi
+
+#exit $compile
+
+
+
+
+#!/bin/bash                                                                                                             
+                                                                                                                        
+rm .guides/runner .guides/runner.log 2>/dev/null                                                                        
+                                                                                                                        
+echo "Running $1"                                                                                                       
+cd /home/codio/workspace                                                                                                
+                                                                                                                        
+# ====== read anython on stdin ===                                                                                      
+# have to do it this way to handle when there isn't anything on stdin                                                   
+input=""                                                                                                                
+while read -t 1 line                                                                                                    
+do                                                                                                                      
+        input+=$line                                                                                                    
+        input+=$"\n"                                                                                                    
+done                                                                                                                    
+                                                                                                                        
+# ====== compile program ===                                                                                            
+echo "Compiling"                                                                                                        
+echo $'#include "leaker.h"\n' "`cat $1`" | g++ --std=c++11 -I/home/codio/workspace -x c++ - leaker.c -o .guides/runner
+compile=$?                                                                                                              
+                                                                                                                        
+# compile failed                                                                                                        
+if [[ $compile -ne 0 ]]                                                                                                 
+then                                                                                                                    
+        exit $compile                                                                                                   
+fi                                                                                                                      
+                                                                                                                        
+# ====== run ===                                                                                                        
+echo "Running"                                                                                                          
+echo -e "$input" | .guides/runner &> .guides/runner.log                                                              
+run=$?                                                                                                                  
+                                                                                                                        
+# run failed                                                                                                            
+if [[ $run -ne 0 ]]                                                                                                     
+then                                                                                                                    
+        cat .guides/runner.log                                                                                          
+        exit $run                                                                                                               
+fi 
+
+# ====== test leak ===
+cat .guides/runner.log | grep "LEAKER: errors found!"
+leak=$?
+if [[ $leak -eq 0 ]]
+then
+        exit 1
+fi
+                                                                                                                        
+# ====== test output ===                                                                                                
+if [[ $# -lt 2 ]]                                                                                                       
+then                                                                                                                    
+        cat .guides/runner.log                                                                                          
+        exit $run                                                                                                       
+fi                                                                                                                      
+                                                                                                                        
+for regex in ${@:2}                                                                                                     
+do                                                                                                                      
+        cat .guides/runner.log | egrep -e "$regex" >/dev/null                                                           
+                                                                                                                        
+        if [[ $? -ne 0 ]]                                                                                               
+        then                                                                                                            
+                cat .guides/runner.log                                                                                  
+                echo ""                                                                                                 
+                echo "Program output doesn't match what's expected."                                                    
+                exit 1                                                                                                  
+        fi                                                                                                              
+done                                                                                                                    
+                                                                                                                        
+cat .guides/runner.log                                                                                                  
+exit 0                                 

@@ -1,0 +1,11 @@
+#!/bin/bash
+
+# configure cmake
+cmake . -DCMAKE_BUILD_TYPE=Debug
+rc=$?; if [[ $rc != 0 ]]; then exit $rc; fi
+
+# run test
+ctest --output-on-failure -R $1 --parrallel 4
+rc=$?; if [[ $rc != 0 ]]; then exit $rc; fi
+
+exit 0

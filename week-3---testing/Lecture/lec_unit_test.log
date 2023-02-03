@@ -1,0 +1,17 @@
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+lec_unit_test is a Catch v2.2.2 host application.
+Run with -? for options
+
+--------------------------------------------------------------
+Bigger
+--------------------------------------------------------------
+/4003CEM/02_testing/code/Lecture/lec_unit_test.cpp:5
+..............................................................
+
+/4003CEM/02_testing/code/Lecture/lec_unit_test.cpp:7: FAILED:
+  REQUIRE( 1 < 0 )
+
+==============================================================
+test cases: 3 | 2 passed | 1 failed
+assertions: 3 | 2 passed | 1 failed

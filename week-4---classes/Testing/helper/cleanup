@@ -1,0 +1,20 @@
+#!/bin/bash
+
+read -p "Are you sure? This may delete things " -n 1 -r
+echo    # (optional) move to a new line
+if [[ ! $REPLY =~ ^[Yy]$ ]]
+then
+    [[ "$0" = "$BASH_SOURCE" ]] && exit 1 || return 1 # handle exits from shell or function but don't exit interactive shell
+fi
+
+git clean -xfd -e ".*"
+git submodule foreach --recursive git clean -xfd -e ".*"
+git reset --hard
+git submodule foreach --recursive git reset --hard
+git submodule update --init --recursive
+
+chmod +x Testing/helper/cleanup
+chmod +x Testing/helper/codiopytest
+chmod +x Testing/helper/codiorun
+chmod +x Testing/helper/codiotest
+chmod +x Testing/helper/solutions

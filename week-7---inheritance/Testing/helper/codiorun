@@ -1,0 +1,48 @@
+#!/bin/bash
+
+#cmake . && 
+#cmake --build . --target $1 &&
+#bin/$1
+
+m=1
+while getopts "m" o; do
+    case "${o}" in
+        m) m=0;;
+#        p)
+#            p=${OPTARG}
+#            ;;
+    esac
+done
+shift $((OPTIND-1))
+
+# configure cmake
+cmake . -DCMAKE_BUILD_TYPE=Debug
+rc=$?; if [[ $rc != 0 ]]; then exit $rc; fi
+
+# build test
+cmake --build . --target $1
+rc=$?; if [[ $rc != 0 ]]; then exit $rc; fi
+
+binpath=bin
+if [[ $1 == lec_* ]]
+then
+    binpath=Lecture/$binpath
+fi
+
+# run test
+$binpath/$1
+rc=$?; if [[ $rc != 0 ]]; then exit $rc; fi
+
+# check memory leaks
+if [[ $m -eq 1 ]]
+then
+    valgrind --leak-check=full --error-exitcode=255 $binpath/$1 2>/dev/null >/dev/null
+    rc=$?;
+    if [[ $rc -eq 255 ]]
+    then
+        echo "MEMORY LEAK/S DETECTED"
+        exit $rc
+    fi
+fi
+
+exit 0
